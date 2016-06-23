@@ -1,0 +1,137 @@
+<?php
+/**
+ * @file
+ * Retrieves and renders data from Github through Github API.
+ */
+
+/**
+ * Implements hook_permission().
+ */
+function hello_github_permission() {
+  return array(
+    'administer hello github settings' => array(
+      'title' => t('Administer settings'),
+      'description' => t('Access Hello Github module\'s settings page.'),
+    ),
+    'hello github search' => array(
+      'title' => t('Hello Github search'),
+      'description' => t('Access Hello Github search page.'),
+    ),
+  );
+}
+
+/**
+ * Implements hook_admin().
+ */
+function hello_github_admin($form, &$form_state) {
+  $form['hello_github_api_key'] = array(
+    '#type' => 'textfield',
+    '#title' => t('Github API key'),
+    '#default_value' => variable_get('hello_github_api_key', ''),
+    '#size' => 40,
+    '#maxlength' => 40,
+    '#description' => t('Github API key. <a href="@link">create your own personal API token</a>', array('@link' => 'https://github.com/settings/tokens')),
+  );
+
+  return system_settings_form($form);
+}
+
+/**
+ * Implements hook_menu().
+ */
+function hello_github_menu() {
+  $items = array();
+
+  $items['admin/config/hello-github'] = array(
+    'title' => 'Hello Github module\'s settings page',
+    'page callback' => 'drupal_get_form',
+    'page arguments' => array('hello_github_admin'),
+    'access arguments' => array('administer hello github settings'),
+    'type' => MENU_NORMAL_ITEM,
+  );
+
+  $items['hello-github'] = array(
+    'title' => 'Retrieve data from Github',
+    'description' => 'A form to send search request to Github.',
+    'page callback' => 'drupal_get_form',
+    'page arguments' => array('hello_github_form'),
+    'access arguments' => array('hello github search'),
+  );
+
+  return $items;
+}
+
+/**
+ * Implements hook_form().
+ */
+function hello_github_form($form, &$form_state) {
+  $form['keyword'] = array(
+    '#title' => 'Search keyword',
+    '#type' => 'textfield',
+    '#required' => TRUE,
+  );
+  $form['submit'] = array(
+    '#value' => 'Submit',
+    '#type' => 'submit',
+  );
+  if (isset($form_state['storage']['results'])) {
+    $form['results'] = array(
+      '#markup' => $form_state['storage']['results'],
+    );
+  }
+  return $form;
+}
+
+/**
+ * Implements hook_form_submit().
+ */
+function hello_github_form_submit($form, &$form_state) {
+  $client = new Github\Client();
+  $apikey = variable_get('hello_github_api_key', '');
+  if (!empty($apikey)) {
+    $client->authenticate($apikey, 'Github\Client::AUTH_HTTP_TOKEN');
+  }
+  try {
+    $results = $client->api('repo')->find($form_state['values']['keyword']);
+  } catch (Exception $e) {
+    drupal_set_message($e->getMessage(), 'error');
+    return;
+  }
+  $repos = array();
+  foreach ($results['repositories'] as $repo) {
+    $repo_state = (!$repo['private']) ? 'PUBLIC' : 'PRIVATE';
+    $message = t('This repository is @state.', array('@state' => $repo_state));
+    $vars = array(
+      'repo_name' => l($repo['name'], $repo['url']),
+      'owner' => $repo['owner'],
+      'status' => $message,
+    );
+    $repos[] = theme('hello_github_results_row', $vars);
+  }
+  $vars = array(
+    'rows' => implode('', $repos),
+  );
+  $form_state['storage']['results'] = theme('hello_github_results', $vars);
+  $form_state['rebuild'] = TRUE;
+}
+
+/**
+ * Implements hook_theme().
+ */
+function hello_github_theme() {
+  $path = drupal_get_path('module', 'hello_github') . '/templates';
+
+  $theme = array();
+  $theme['hello_github_results'] = array(
+    'variables' => array('vars' => NULL),
+    'template' => 'hello_github_results',
+    'path' => $path,
+  );
+  $theme['hello_github_results_row'] = array(
+    'variables' => array('vars' => NULL),
+    'template' => 'hello_github_results_row',
+    'path' => $path,
+  );
+
+  return $theme;
+}

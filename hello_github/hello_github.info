@@ -1,0 +1,6 @@
+name = Hello Github
+description = Retrieving and rendering data from Github.
+package = Other
+core = 7.x
+configure = admin/config/hello-github
+dependencies[] = composer_manager
